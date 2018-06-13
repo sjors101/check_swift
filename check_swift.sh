@@ -10,25 +10,47 @@ OS_USERNAME="replace_me"
 SWIFT_CONTAINER='replace_me'
 TEMP_DIR='/tmp'
 
-reading_objects() {
-    SWIFT_DOCS=($(swift --os-auth-url $OS_AUTH_URL --os-username $OS_USERNAME --os-password $OS_PASSWORD --os-tenant-name $OS_TENANT_NAME list $SWIFT_CONTAINER | head -$1 | sed 's/:.*//'))
+creating_objects() {
+    dd if=/dev/urandom of=grafana-$1.file bs=1024 count=1024
+}
 
-    SWIFT_METRICS_SUMMARY=("0" "0" "0")
+uploading_object() {
+    SWIFT_DOC_METRICS=$(swift --os-auth-url $OS_AUTH_URL --os-username $OS_USERNAME --os-password $OS_PASSWORD --os-tenant-name $OS_TENANT_NAME upload $SWIFT_CONTAINER $1)
+    echo $SWIFT_DOC_METRICS
+}
 
-    for DOC in "${SWIFT_DOCS[@]}"
+downloading_object() {
+    SWIFT_DOC_METRICS=$(swift --os-auth-url $OS_AUTH_URL --os-username $OS_USERNAME --os-password $OS_PASSWORD --os-tenant-name $OS_TENANT_NAME download "$SWIFT_CONTAINER" $1)
+    echo $SWIFT_DOC_METRICS
+}
+
+cleanup_object(){
+    SWIFT_DOC_METRICS=$(swift --os-auth-url $OS_AUTH_URL --os-username $OS_USERNAME --os-password $OS_PASSWORD --os-tenant-name $OS_TENANT_NAME delete $SWIFT_CONTAINER $1)
+    echo $SWIFT_DOC_METRICS
+}
+
+reading_metrics() {
+    SWIFT_METRICS_SUMMARY=("0" "0" "0" "0")
+    cd $TEMP_DIR
+    # loop for number
+    for i in $(seq 1 $1);
         do
-        SWIFT_DOC_METRICS=$(swift --os-auth-url $OS_AUTH_URL --os-username $OS_USERNAME --os-password $OS_PASSWORD --os-tenant-name $OS_TENANT_NAME download "$SWIFT_CONTAINER" "$DOC" -o "$TEMP_DIR/$DOC")
+        creating_objects $i > /dev/null 2>&1 &
+        WRITE=$(uploading_object "grafana-$i.file")
+        READ=$(downloading_object "grafana-$i.file")
+        REMOVE=$(cleanup_object "grafana-$i.file")
 
-        SWIFT_DOC_METRICS_AUTH=`echo $SWIFT_DOC_METRICS | awk '{print $3}'| sed 's/[,s]//g'`
-        SWIFT_DOC_METRICS_HEADERS=`echo $SWIFT_DOC_METRICS | awk '{print $5}'| sed 's/[,s]//g'`
-        SWIFT_DOC_METRICS_TOTAL=`echo $SWIFT_DOC_METRICS | awk '{print $7}'| sed 's/[,s]//g'`
+        SWIFT_DOC_METRICS_AUTH=`echo $READ | awk '{print $3}'| sed 's/[,s]//g'`
+        SWIFT_DOC_METRICS_HEADERS=`echo $READ | awk '{print $5}'| sed 's/[,s]//g'`
+        SWIFT_DOC_METRICS_TOTAL=`echo $READ | awk '{print $7}'| sed 's/[,s]//g'`
+        SWIFT_DOC_METRICS_TRANSMISSION=`echo $READ | awk '{print $8}'| sed 's/[,s]//g'`
 
-#        echo "Metrics on $DOC - auth:$SWIFT_DOC_METRICS_AUTH headers:$SWIFT_DOC_METRICS_HEADERS total:$SWIFT_DOC_METRICS_TOTAL"
-
-        #ARRAY
+        #echo "Metrics on grafana-$i.file - auth:$SWIFT_DOC_METRICS_AUTH headers:$SWIFT_DOC_METRICS_HEADERS total:$SWIFT_DOC_METRICS_TOTAL transmission:$SWIFT_DOC_METRICS_TRANSMISSION MB/s"
+        #Put results in array
         SWIFT_METRICS_SUMMARY[0]=$(echo "${SWIFT_METRICS_SUMMARY[0]} + $SWIFT_DOC_METRICS_AUTH" | bc)
         SWIFT_METRICS_SUMMARY[1]=$(echo "${SWIFT_METRICS_SUMMARY[1]} + $SWIFT_DOC_METRICS_HEADERS" | bc)
         SWIFT_METRICS_SUMMARY[2]=$(echo "${SWIFT_METRICS_SUMMARY[2]} + $SWIFT_DOC_METRICS_TOTAL" | bc)
+        SWIFT_METRICS_SUMMARY[3]=$(echo "${SWIFT_METRICS_SUMMARY[3]} + $SWIFT_DOC_METRICS_TRANSMISSION" | bc)
     done
 
     # covert from float to int
@@ -39,12 +61,11 @@ reading_objects() {
         COUNTER=$((COUNTER + 1))
     done
 
-#    echo "Average metrics on sum over $1 documents - auth:${SWIFT_METRICS_SUMMARY[0]}ms headers:${SWIFT_METRICS_SUMMARY[1]}ms total:${SWIFT_METRICS_SUMMARY[2]}ms"
-    echo "auth:${SWIFT_METRICS_SUMMARY[0]}ms headers:${SWIFT_METRICS_SUMMARY[1]}ms total:${SWIFT_METRICS_SUMMARY[2]}ms"
+    echo "auth:${SWIFT_METRICS_SUMMARY[0]}ms headers:${SWIFT_METRICS_SUMMARY[1]}ms total:${SWIFT_METRICS_SUMMARY[2]}ms transmission:${SWIFT_METRICS_SUMMARY[3]}"
 }
 
 if [[ $1 =~ ^[0-9]+$ ]]; then
-    reading_objects $1
+    reading_metrics $1
 else
     echo "ERROR: Provide amount of documents. Example: ./swift_check 2"
 fi
