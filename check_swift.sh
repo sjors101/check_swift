@@ -64,7 +64,9 @@ reading_metrics() {
     echo "auth:${SWIFT_METRICS_SUMMARY[0]}ms headers:${SWIFT_METRICS_SUMMARY[1]}ms total:${SWIFT_METRICS_SUMMARY[2]}ms transmission:${SWIFT_METRICS_SUMMARY[3]}"
 }
 
-if [[ $1 =~ ^[0-9]+$ ]]; then
+if ! which swift >/dev/null 2>&1; then
+    echo "ERROR: swiftclient not found"
+elif [[ $1 =~ ^[0-9]+$ ]]; then
     reading_metrics $1
 else
     echo "ERROR: Provide amount of documents. Example: ./swift_check 2"
