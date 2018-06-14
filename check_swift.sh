@@ -66,6 +66,9 @@ reading_metrics() {
 
 if ! which swift >/dev/null 2>&1; then
     echo "ERROR: swiftclient not found"
+elif ! SWIFT_TEST=$(timeout 5 swift --os-auth-url $OS_AUTH_URL --os-username $OS_USERNAME --os-password $OS_PASSWORD --os-tenant-name $OS_TENANT_NAME list 2>/dev/null); then
+    echo "ERROR: Unable to access swift"
+    exit    
 elif [[ $1 =~ ^[0-9]+$ ]]; then
     reading_metrics $1
 else
